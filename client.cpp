@@ -63,11 +63,18 @@ int main()
 			setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 			
 			cerr << "CONNECTED" << endl;
+			
 			string challengeString = read_packet (socket);
 			string responseString = processChallenge(challengeString);
-			send (socket, &responseString, responseString.length(), MSG_NOSIGNAL);
+			responseString = "hi!\n";
+			
+			cerr << "PROCESSED" << endl;
+			int count = send (socket, responseString.c_str(), strlen(responseString.c_str()), MSG_NOSIGNAL);
+			cerr << responseString << " is " << count << " chars" << endl;
+			
 			string result = read_packet (socket);
 			cerr << result << endl;
+			close (socket);
 		}
 		else
 		{
@@ -82,7 +89,7 @@ int main()
     {
         cerr << "Socket error" << endl;
     }
-
+	
     return 0;
 }
 
@@ -120,7 +127,7 @@ string read_packet (int client_socket)
             // takes care of fragmentation  (one packet arriving could have 
             // just one fragment of the transmitted message)
 
-        if (bytes_read > 0)
+		if (bytes_read > 0)
         {
             buffer[bytes_read] = '\0';
             buffer[bytes_read + 1] = '\0';
@@ -159,24 +166,27 @@ string read_packet (int client_socket)
 
 string processChallenge (string challengeString)
 {
-	cerr << "Processing challenge...\n" << endl;
+	cerr << "Processing challenge..." << endl;
+		
+	istringstream iss(challengeString);
+	string R;
+	getline( iss, R, ' ' );
+	string P;
+	getline( iss, P, ' ' );
 	
-	char *tempChar = new char[challengeString.length() + 1];
-	strcpy(tempChar, challengeString.c_str());
-	char *pch = strtok (tempChar, " ");
-	string R = pch;
-	pch = strtok (NULL, " ");
-	string P = pch;
-	delete [] tempChar;
-	cerr << "R: " << R << ", P: " << P << "\n" << endl;
+	cerr << "R: " << R << ", P: " << P << endl;
 	string x = generate_random_string(128);
-	string hashVal = cgipp::sha256(R + x + R);
+	string hashVal = cgipp::sha256("a");
+	cerr << "hash: " << hashVal << " ..." << endl;
+	cerr << "find: " << hashVal.find(P) << " ..." << endl;
 	while (hashVal.find(P) != 0)
 	{
-		cerr << "hash: " << hashVal << " ...\n" << endl;
+		//cerr << "hash: " << hashVal << " ..." << endl;
 		x = generate_random_string(128);
 		hashVal = cgipp::sha256(R + x + R);
 	}
+	
+	hashVal += '\n';
 	return hashVal;
 }
 

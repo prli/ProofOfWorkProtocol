@@ -127,9 +127,19 @@ void process_connection (int client_socket)
 		tv.tv_usec = 0;  // Not init'ing this can cause strange errors
 
 		setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
-			
+
 		send_challenge(client_socket);
+		time_t send_timev = time(0);
+		
+		cerr << "waiting..." << endl;
 		string responseString = read_packet (client_socket);
+		time_t receive_timev = time(0);
+		if(receive_timev - send_timev < 100000)
+		{
+			cerr << "response too fast..." << endl;
+			close(client_socket);
+		}
+		
 		verify_reponse(client_socket, responseString);
         close(client_socket);
     }
@@ -155,17 +165,19 @@ string generate_random_string (int size)
 
 void send_challenge (int client_socket)
 {
-	cerr << "sending challenge...\n" << endl;
-	string m_R = cgipp::hex_encoded(generate_random_string(128));
-	string m_P = cgipp::hex_encoded(generate_random_string(p_length));
+	cerr << "sending challenge..." << endl;
+	m_R = cgipp::hex_encoded(generate_random_string(8));
+	m_P = cgipp::hex_encoded(generate_random_string(8));
 	string stringToSend = m_R + " " + m_P + '\n';
+	stringToSend = "abcde ca9\n";
 	int count = send (client_socket, stringToSend.c_str(), strlen(stringToSend.c_str()), MSG_NOSIGNAL);
 	cerr << stringToSend << "is " << count << " chars" << endl;
 }
 
 void verify_reponse (int client_socket, string responseString)
 {
-	cerr << "verifying response...\n" << endl;
+	cerr << "verifying response..." << endl;
+	send (client_socket, "ok!\n", 4, MSG_NOSIGNAL);
 	//length is 384 bits
 	if (responseString.length() != 48)
 	{
@@ -211,7 +223,8 @@ string read_packet (int client_socket)
             // localhost, transmitting a small packet at a time --- this code 
             // takes care of fragmentation  (one packet arriving could have 
             // just one fragment of the transmitted message)
-        if (bytes_read > 0)
+
+		if (bytes_read > 0)
         {
             buffer[bytes_read] = '\0';
             buffer[bytes_read + 1] = '\0';
@@ -221,7 +234,6 @@ string read_packet (int client_socket)
             {
                 msg += packet;
                 packet += strlen(packet) + 1;
-
                 if (msg.length() > 1 && msg[msg.length() - 1] == '\n')
                 {
                     istringstream buf(msg);
