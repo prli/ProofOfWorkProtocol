@@ -36,6 +36,7 @@ using namespace std;
 #include <unistd.h>
 
 #include "encodings.h"
+#include "crypto.h"
 using namespace cgipp;
 
 class connection_closed {};
@@ -44,17 +45,15 @@ class socket_error {};
 void listen_connections (int port);
 void process_connection (int client_socket);
 
-void send_challenge (int client_socket);
-void verify_reponse (int client_socket, string responseString);
+string send_challenge (int client_socket);
+void verify_reponse (int client_socket, string challengeString, string responseString);
 
 string generate_random_string (int bitSize);
 
 string read_packet (int client_socket);
 
 int m_port = 34951;
-int p_length = 128;
-string m_R;
-string m_P;
+int p_length = 8;
 
 int main (int na, char * arg[])
 {
@@ -126,21 +125,23 @@ void process_connection (int client_socket)
 		tv.tv_sec = 30;  /* 30 Secs Timeout */
 		tv.tv_usec = 0;  // Not init'ing this can cause strange errors
 
-		setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+		//setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 
-		send_challenge(client_socket);
-		time_t send_timev = time(0);
+		string challengeString = send_challenge(client_socket);
+		const clock_t send_timev = clock();
 		
 		cerr << "waiting..." << endl;
 		string responseString = read_packet (client_socket);
-		time_t receive_timev = time(0);
-		if(receive_timev - send_timev < 100000)
-		{
-			cerr << "response too fast..." << endl;
-			close(client_socket);
-		}
+		const clock_t receive_timev = clock();
 		
-		verify_reponse(client_socket, responseString);
+		cerr << "processing TIME: " << double( receive_timev - send_timev ) /  CLOCKS_PER_SEC << endl;
+		// if(receive_timev - send_timev < 100000000)
+		// {
+			// cerr << "response too fast..." << endl;
+			// close(client_socket);
+		// }
+		
+		verify_reponse(client_socket, challengeString, responseString);
         close(client_socket);
     }
     catch (connection_closed)
@@ -163,46 +164,56 @@ string generate_random_string (int size)
 	return string(randomString, charCount);
 }
 
-void send_challenge (int client_socket)
+string send_challenge (int client_socket)
 {
 	cerr << "sending challenge..." << endl;
-	m_R = cgipp::hex_encoded(generate_random_string(8));
-	m_P = cgipp::hex_encoded(generate_random_string(8));
-	string stringToSend = m_R + " " + m_P + '\n';
-	stringToSend = "abcde ca9\n";
+	string R = cgipp::hex_encoded(generate_random_string(128));
+	string P = cgipp::hex_encoded(generate_random_string(p_length));
+	string stringToSend = R + " " + P + '\n';
 	int count = send (client_socket, stringToSend.c_str(), strlen(stringToSend.c_str()), MSG_NOSIGNAL);
-	cerr << stringToSend << "is " << count << " chars" << endl;
+	//cerr << stringToSend << "is " << count << " chars" << endl;
+	return stringToSend;
 }
 
-void verify_reponse (int client_socket, string responseString)
+void verify_reponse (int client_socket, string challengeString, string responseString)
 {
+	istringstream iss(challengeString);
+	string R;
+	getline( iss, R, ' ' );
+	string P;
+	getline( iss, P, ' ' );
+	P.erase(std::remove(P.begin(), P.end(), '\n'), P.end());
+	
 	cerr << "verifying response..." << endl;
-	send (client_socket, "ok!\n", 4, MSG_NOSIGNAL);
-	//length is 384 bits
-	if (responseString.length() != 48)
+	//length is 768 bits (hexcoded)
+	if (responseString.length() != 96)
 	{
 		close (client_socket);
+		cerr << "too short..." << responseString.length() << endl;
 		throw connection_closed();
 	}
 	
 	//starts with R
-	if (responseString.find(m_R) != 0)
+	if (responseString.find(R) != 0)
 	{
 		close (client_socket);
+		cerr << "does not start with R..." << endl;
 		throw connection_closed();
 	}
 	
 	//ends with R
-	if (responseString.length() < m_R.length()
-		&& responseString.compare (responseString.length() - m_R.length(), m_R.length(), m_R) != 0) 
+	if (responseString.length() < R.length()
+		&& responseString.compare (responseString.length() - R.length(), R.length(), R) != 0) 
 	{
 		close (client_socket);
+		cerr << "does not end with R..." << endl;
 		throw connection_closed();
     }
 	
-	if (responseString.find(m_R) != 0)
+	if (cgipp::sha256(cgipp::hex_decoded(responseString)).find(P) != 0)
 	{
 		close (client_socket);
+		cerr << "hashed values does not start with P..." << endl;
 		throw connection_closed();
 	}
 	

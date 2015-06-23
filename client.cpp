@@ -34,6 +34,7 @@ using namespace std;
 #include <wait.h>
 #include <unistd.h>
 
+#include "encodings.h"
 #include "crypto.h"
 using namespace cgipp;
 
@@ -60,17 +61,22 @@ int main()
 			tv.tv_sec = 30;  /* 30 Secs Timeout */
 			tv.tv_usec = 0;  // Not init'ing this can cause strange errors
 
-			setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+			//setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 			
 			cerr << "CONNECTED" << endl;
 			
 			string challengeString = read_packet (socket);
-			string responseString = processChallenge(challengeString);
-			responseString = "hi!\n";
+			const clock_t receive_timev = clock();
+
+			string responseString = cgipp::hex_encoded(processChallenge(challengeString));
+			responseString += '\n';
 			
-			cerr << "PROCESSED" << endl;
 			int count = send (socket, responseString.c_str(), strlen(responseString.c_str()), MSG_NOSIGNAL);
 			cerr << responseString << " is " << count << " chars" << endl;
+			const clock_t send_timev = clock();
+			
+			cerr << "processing TIME: " << double( send_timev - receive_timev ) /  CLOCKS_PER_SEC << endl;
+			
 			
 			string result = read_packet (socket);
 			cerr << result << endl;
@@ -169,25 +175,26 @@ string processChallenge (string challengeString)
 	cerr << "Processing challenge..." << endl;
 		
 	istringstream iss(challengeString);
-	string R;
-	getline( iss, R, ' ' );
+	string R_hex;
+	getline( iss, R_hex, ' ' );
+	string R = cgipp::hex_decoded(R_hex);
 	string P;
 	getline( iss, P, ' ' );
+	P.erase(std::remove(P.begin(), P.end(), '\n'), P.end());
 	
-	cerr << "R: " << R << ", P: " << P << endl;
+	cerr << "P: " << P << "..." << endl;
 	string x = generate_random_string(128);
-	string hashVal = cgipp::sha256("a");
-	cerr << "hash: " << hashVal << " ..." << endl;
-	cerr << "find: " << hashVal.find(P) << " ..." << endl;
+	string hashVal = cgipp::sha256(R + x + R);
+
 	while (hashVal.find(P) != 0)
 	{
 		//cerr << "hash: " << hashVal << " ..." << endl;
 		x = generate_random_string(128);
 		hashVal = cgipp::sha256(R + x + R);
 	}
-	
-	hashVal += '\n';
-	return hashVal;
+	cerr << "hash: " << hashVal << " ..." << endl;
+	cerr << "length: " << string(R + x + R).length() << "..." << endl;
+	return R + x + R;
 }
 
 string generate_random_string (int size)
