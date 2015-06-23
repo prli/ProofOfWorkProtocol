@@ -58,10 +58,10 @@ int main()
 		{
 			struct timeval tv;
 
-			tv.tv_sec = 30;  /* 30 Secs Timeout */
+			tv.tv_sec = 10;  /* 30 Secs Timeout */
 			tv.tv_usec = 0;  // Not init'ing this can cause strange errors
 
-			//setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+			setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
 			
 			cerr << "CONNECTED" << endl;
 			
@@ -72,14 +72,14 @@ int main()
 			responseString += '\n';
 			
 			int count = send (socket, responseString.c_str(), strlen(responseString.c_str()), MSG_NOSIGNAL);
-			cerr << responseString << " is " << count << " chars" << endl;
+
 			const clock_t send_timev = clock();
 			
 			cerr << "processing TIME: " << double( send_timev - receive_timev ) /  CLOCKS_PER_SEC << endl;
 			
 			
 			string result = read_packet (socket);
-			cerr << result << endl;
+			cerr << "Server response: " << result << endl;
 			close (socket);
 		}
 		else
@@ -193,7 +193,6 @@ string processChallenge (string challengeString)
 		hashVal = cgipp::sha256(R + x + R);
 	}
 	cerr << "hash: " << hashVal << " ..." << endl;
-	cerr << "length: " << string(R + x + R).length() << "..." << endl;
 	return R + x + R;
 }
 

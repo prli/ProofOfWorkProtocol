@@ -49,14 +49,32 @@ string send_challenge (int client_socket);
 void verify_reponse (int client_socket, string challengeString, string responseString);
 
 string generate_random_string (int bitSize);
+int setTimeout (int matchLength);
 
 string read_packet (int client_socket);
 
 int m_port = 34951;
-int p_length = 8;
+int p_length;
 
 int main (int na, char * arg[])
 {
+	if(na != 2)
+	{
+		cerr << "missing arg for p length, ex) ./server.out 16" << endl;
+		return 0;
+	}
+	istringstream temp(arg[1]);
+	if (!(temp >> p_length))
+	{
+		cerr << "Invalid number -" << arg[1] << endl;
+		return 0;
+	}
+	if(p_length%8 != 0)
+	{
+		cerr << "must be multiple of 8 -" << arg[1] << endl;
+		return 0;
+	}
+	
     listen_connections (m_port);
     return 0;
 }
@@ -122,10 +140,10 @@ void process_connection (int client_socket)
     {
 		struct timeval tv;
 
-		tv.tv_sec = 30;  /* 30 Secs Timeout */
+		tv.tv_sec = setTimeout(p_length);  /* n= 30 is 30 Secs Timeout */
 		tv.tv_usec = 0;  // Not init'ing this can cause strange errors
 
-		//setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+		setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
 
 		string challengeString = send_challenge(client_socket);
 		const clock_t send_timev = clock();
@@ -135,11 +153,11 @@ void process_connection (int client_socket)
 		const clock_t receive_timev = clock();
 		
 		cerr << "processing TIME: " << double( receive_timev - send_timev ) /  CLOCKS_PER_SEC << endl;
-		// if(receive_timev - send_timev < 100000000)
-		// {
-			// cerr << "response too fast..." << endl;
-			// close(client_socket);
-		// }
+		if(double( receive_timev - send_timev ) /  CLOCKS_PER_SEC < 0.075)
+		{
+			cerr << "responded too fast..." << endl;
+			close(client_socket);
+		}
 		
 		verify_reponse(client_socket, challengeString, responseString);
         close(client_socket);
@@ -164,6 +182,11 @@ string generate_random_string (int size)
 	return string(randomString, charCount);
 }
 
+int setTimeout (int matchLength)
+{
+	return 30;
+}
+
 string send_challenge (int client_socket)
 {
 	cerr << "sending challenge..." << endl;
@@ -171,7 +194,6 @@ string send_challenge (int client_socket)
 	string P = cgipp::hex_encoded(generate_random_string(p_length));
 	string stringToSend = R + " " + P + '\n';
 	int count = send (client_socket, stringToSend.c_str(), strlen(stringToSend.c_str()), MSG_NOSIGNAL);
-	//cerr << stringToSend << "is " << count << " chars" << endl;
 	return stringToSend;
 }
 
@@ -189,7 +211,7 @@ void verify_reponse (int client_socket, string challengeString, string responseS
 	if (responseString.length() != 96)
 	{
 		close (client_socket);
-		cerr << "too short..." << responseString.length() << endl;
+		cerr << "response size is too short..." << responseString.length() << endl;
 		throw connection_closed();
 	}
 	
@@ -218,6 +240,7 @@ void verify_reponse (int client_socket, string challengeString, string responseS
 	}
 	
 	send (client_socket, "ok!\n", 4, MSG_NOSIGNAL);
+	cerr << "ok!" << endl;
 }
 
 string read_packet (int client_socket)
