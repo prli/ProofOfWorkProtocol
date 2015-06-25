@@ -183,7 +183,7 @@ string processChallenge (string challengeString, int client_socket)
 	double maxTimeAllowed = double(maxCount)/1000 + 5;//allow extra 5s for network delays
 	cerr << "maxTimeAllowed: " << maxTimeAllowed << "..." << endl;
 	int luckyHalf = maxCount/2;
-	double minTimeAllowed = double(luckyHalf)/1000;
+	double minTimeAllowed = max(1.0,double(luckyHalf)/1000);
 	cerr << "minTimeAllowed: " << minTimeAllowed << "..." << endl;
 	
 	string x = generate_random_string(128);

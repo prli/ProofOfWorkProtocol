@@ -195,14 +195,14 @@ int setTimeout (int matchLength)
 	//1000 * (generateRandomString+sha256) takes less than 1s
 	int maxCount = 1 << matchLength;
 	int timeOut = maxCount/1000 + 10;
+	cerr << "maxTime: " << timeOut << "..." << endl;
 	return timeOut;
 }
 
 double getMinProcessingTime(int matchLength)
 {
 	int luckyHalf = 1 << matchLength/2;
-	cerr << "luckyHalf: " << luckyHalf << "..." << endl;
-	double minTime = double(luckyHalf)/1000;
+	double minTime = max(1.0,double(luckyHalf)/1000);
 	cerr << "minTime: " << minTime << "..." << endl;
 	return minTime;
 }
