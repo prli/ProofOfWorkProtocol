@@ -50,6 +50,7 @@ void verify_reponse (int client_socket, string challengeString, string responseS
 
 string generate_random_string (int bitSize);
 int setTimeout (int matchLength);
+double getMinProcessingTime(int matchLength);
 
 string read_packet (int client_socket);
 
@@ -146,20 +147,26 @@ void process_connection (int client_socket)
 		setsockopt(client_socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv, sizeof(struct timeval));
 
 		string challengeString = send_challenge(client_socket);
-		const clock_t send_timev = clock();
 		
+		time_t start,end;
+		time (&start);
+				
 		cerr << "waiting..." << endl;
 		string responseString = read_packet (client_socket);
-		const clock_t receive_timev = clock();
 		
-		cerr << "processing TIME: " << double( receive_timev - send_timev ) /  CLOCKS_PER_SEC << endl;
-		if(double( receive_timev - send_timev ) /  CLOCKS_PER_SEC < 0.075)
+		time (&end);
+		double processTime = difftime (end,start);
+		
+		cerr << "processing TIME: " << processTime << endl;
+		if(processTime < getMinProcessingTime(p_length))
 		{
-			cerr << "responded too fast..." << endl;
+			cerr << processTime << "s response time is too fast..." << endl;
 			close(client_socket);
 		}
-		
-		verify_reponse(client_socket, challengeString, responseString);
+		else
+		{
+			verify_reponse(client_socket, challengeString, responseString);
+		}
         close(client_socket);
     }
     catch (connection_closed)
@@ -184,7 +191,20 @@ string generate_random_string (int size)
 
 int setTimeout (int matchLength)
 {
-	return 30;
+	//matchLength measured in bits, max tries needed = 2^matchLength
+	//1000 * (generateRandomString+sha256) takes less than 1s
+	int maxCount = 1 << matchLength;
+	int timeOut = maxCount/1000 + 10;
+	return timeOut;
+}
+
+double getMinProcessingTime(int matchLength)
+{
+	int luckyHalf = 1 << matchLength/2;
+	cerr << "luckyHalf: " << luckyHalf << "..." << endl;
+	double minTime = double(luckyHalf)/1000;
+	cerr << "minTime: " << minTime << "..." << endl;
+	return minTime;
 }
 
 string send_challenge (int client_socket)

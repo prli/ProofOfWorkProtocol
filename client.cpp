@@ -40,7 +40,7 @@ using namespace cgipp;
 
 int socket_to_server (const char * IP, int port);
 string read_packet (int socket);
-string processChallenge (string challengeString);
+string processChallenge (string challengeString, int socket);
 string generate_random_string (int bitSize);
 
 class connection_closed {};
@@ -58,25 +58,19 @@ int main()
 		{
 			struct timeval tv;
 
-			tv.tv_sec = 10;  /* 30 Secs Timeout */
+			tv.tv_sec = 10;  /* 10 Secs Timeout */
 			tv.tv_usec = 0;  // Not init'ing this can cause strange errors
 
-			setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval));
+			setsockopt(socket, SOL_SOCKET, SO_RCVTIMEO, (char *)&tv,sizeof(struct timeval)); //after sending response, server should reply back <10s
 			
 			cerr << "CONNECTED" << endl;
 			
 			string challengeString = read_packet (socket);
-			const clock_t receive_timev = clock();
 
-			string responseString = cgipp::hex_encoded(processChallenge(challengeString));
+			string responseString = cgipp::hex_encoded(processChallenge(challengeString, socket));
 			responseString += '\n';
 			
-			int count = send (socket, responseString.c_str(), strlen(responseString.c_str()), MSG_NOSIGNAL);
-
-			const clock_t send_timev = clock();
-			
-			cerr << "processing TIME: " << double( send_timev - receive_timev ) /  CLOCKS_PER_SEC << endl;
-			
+			int count = send (socket, responseString.c_str(), strlen(responseString.c_str()), MSG_NOSIGNAL);			
 			
 			string result = read_packet (socket);
 			cerr << "Server response: " << result << endl;
@@ -170,10 +164,12 @@ string read_packet (int client_socket)
     throw connection_closed();
 }
 
-string processChallenge (string challengeString)
+string processChallenge (string challengeString, int client_socket)
 {
 	cerr << "Processing challenge..." << endl;
-		
+	
+	clock_t start = clock();
+	
 	istringstream iss(challengeString);
 	string R_hex;
 	getline( iss, R_hex, ' ' );
@@ -181,8 +177,15 @@ string processChallenge (string challengeString)
 	string P;
 	getline( iss, P, ' ' );
 	P.erase(std::remove(P.begin(), P.end(), '\n'), P.end());
-	
 	cerr << "P: " << P << "..." << endl;
+	
+	int maxCount = 1 << (P.length()/2)*8; //hexdecode and number of bits
+	double maxTimeAllowed = double(maxCount)/1000 + 5;//allow extra 5s for network delays
+	cerr << "maxTimeAllowed: " << maxTimeAllowed << "..." << endl;
+	int luckyHalf = maxCount/2;
+	double minTimeAllowed = double(luckyHalf)/1000;
+	cerr << "minTimeAllowed: " << minTimeAllowed << "..." << endl;
+	
 	string x = generate_random_string(128);
 	string hashVal = cgipp::sha256(R + x + R);
 
@@ -191,8 +194,24 @@ string processChallenge (string challengeString)
 		//cerr << "hash: " << hashVal << " ..." << endl;
 		x = generate_random_string(128);
 		hashVal = cgipp::sha256(R + x + R);
+		if(double(clock()-start)/CLOCKS_PER_SEC > maxTimeAllowed)
+		{
+			close (client_socket);
+			cerr << "Taking too long to break challenge" << endl;
+			throw connection_closed();
+		}
 	}
+	double processTime = double(clock()-start)/CLOCKS_PER_SEC;
+	
 	cerr << "hash: " << hashVal << " ..." << endl;
+	cerr << "processing TIME: " << processTime << endl;
+	while(processTime <= minTimeAllowed)
+	{
+		cerr << "stalling..." << endl;
+		usleep(250000);//wait 0.25s
+		processTime += 0.25;
+	}
+	
 	return R + x + R;
 }
 
